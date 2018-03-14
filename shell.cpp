@@ -15,6 +15,7 @@
 #include<string.h>
 #include<vector>
 #include<chrono>
+#include<time.h>
 #include<errno.h>
 #include <stdexcept>
 #include "StringFunctions.h"
@@ -23,15 +24,21 @@ void printHistory(std::vector<std::string>);
 void printPtime(double ptime);
 void changeDirectory(std::string dir);
 void getWorkingDir();
+void pushd(std::string dir);
+void popd(std::vector<std::string> &dirHistory);
+void printRunTime();
+std::string getDirFromCommand(std::string dir);
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime);
-int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord);
+int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord, std::vector<std::string> &dirHistory);
 std::vector<std::string> builtInCommands();
 bool in(std::string check, std::vector<std::string> v);
 std::vector<std::string> cleanCmdVector(std::vector<std::string> cmdVec);
+void wasteTime(); //For checking if printRunTime is working
 
 int main(void) {
 	//Allocate a vector for storing history until we are done running commands
 	std::vector<std::string> history;
+	std::vector<std::string> dirHistory;
 	double ptime = 0.0;
 	char cwd[256];
 	getcwd(cwd, sizeof(cwd));
@@ -40,21 +47,21 @@ int main(void) {
 	while (true) {
 		// print a prompt
 		std::cout << "shell$ ";
-		std::string cmd;
+		std::string cmd = "";
 		getline(std::cin, cmd); //At this point, I need to 'tokenize' cmd
 		trim(cmd); //Trims command in place (allows for any amount of trailing and leading whitespace)
 		auto cmdVec = split(cmd, ' '); //Added for cd, ^ and other commands that start with a command and are built in.
 
 		history.push_back(cmd); // Push history before we run command
 		if (in(cmdVec[0], builtInCommands())) { //If commands is in builtInCommands
-			auto result = runBuiltInCommand(cmd, history, ptime, cmdVec[0]);
+			auto result = runBuiltInCommand(cmd, history, ptime, cmdVec[0], dirHistory);
 			if (result == 0) {
 				continue;
 			} else if (result == 1) {
 				break;
 			} else {
 				std::cout << "Were you trying to break something? An error occured and I wasn't able to recover from it! Sorry about that." << std::endl;
-				break;
+				break; 
 			}
 		} else {
 			execCommand(cmd, history, ptime);
@@ -75,10 +82,7 @@ void printHistory(std::vector<std::string> history) {
 }
 
 void changeDirectory(std::string dir) {
-	auto cmdVec = split(dir, ' ');
-	cmdVec.erase(cmdVec.begin());
-	auto directory = cmdVec.front();
-	chdir(directory.c_str());
+	chdir(dir.c_str());
 }
 
 void getWorkingDir() {
@@ -87,11 +91,78 @@ void getWorkingDir() {
 	std::cout << cwd << std::endl;
 }
 
+void pushd(std::string dir, std::vector<std::string> &dirHistory) {
+	char cwd[256];
+	getcwd(cwd, sizeof(cwd));
+	std::string directory = cwd;
+	dirHistory.push_back(directory);
+	chdir(dir.c_str());
+}
+
+void popd(std::vector<std::string> &dirHistory) {
+	if (dirHistory.empty()) {
+		std::cout << "No stored directories" << std::endl;
+		return;
+	}
+	chdir(dirHistory.back().c_str());
+	dirHistory.pop_back();
+}
+
+void printRunTime() {
+	double timeRun = clock()/CLOCKS_PER_SEC;
+	int hours = (int)(timeRun / 3600);
+	int minutes = (int)(((timeRun/3600)-hours)*60);
+	int seconds = (int)(((((timeRun/3600)-hours)*60)-minutes)*60);
+	char minutesZero = (char)NULL;
+	char secondsZero = (char)NULL;
+	if (minutes < 10) {
+		minutesZero = '0';
+	}
+	if (seconds < 10) {
+		secondsZero = '0';
+	}
+	std::cout << "Time this process has spent in the running state: " << hours << ":" << minutesZero << minutes << ":" << secondsZero << seconds << std::endl;
+}
+
+void wasteTime() {
+	bool done = false;
+	int n = 1;
+	for (int i = 0; i < 2; i++) {
+		done = false;
+		while (!done) {
+			n++;
+			if (n == 0) {
+				done = true;
+			}
+		}
+	}
+}
+
+void printDirs(std::vector<std::string> &dirHistory) {
+	if (dirHistory.empty()) {
+		getWorkingDir();
+		return;
+	}
+	for (auto s : dirHistory) {
+		std::cout << s << " ";
+	}
+	char cwd[256];
+	getcwd(cwd, sizeof(cwd));
+	std::cout << cwd << std::endl;
+}
+
+std::string getDirFromCommand(std::string dir) {
+	auto cmdVec = split(dir, ' ');
+	cmdVec.erase(cmdVec.begin());
+	return cmdVec.front();
+}
+
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime) {
 	if (fork()) {
+		int wstatus = 2;
 		//parent
 		auto start = std::chrono::high_resolution_clock::now();
-		wait(0);
+		wait(&wstatus);
 		auto end = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double> diff = end-start;
 		ptime += diff.count();
@@ -110,6 +181,7 @@ void execCommand(std::string cmd, std::vector<std::string> &history, double &pti
 
 		if (-1 == result) { //vect must be null string terminated
 			// command not found, or similar error
+			std::cout << "Command: " <<  args[0] << std::endl;
 			std::cerr << "Error: " << strerror(errno) << std::endl;
 			exit(1);
 		} else {
@@ -134,7 +206,12 @@ std::vector<std::string> builtInCommands() {
 		"exit",
 		"^",
 		"cd",
-		"pwd"
+		"pwd",
+		"pushd",
+		"popd",
+		"dirs",
+		"running_time",
+		"waste"
 	};
 
 	return v;
@@ -144,7 +221,7 @@ std::vector<std::string> builtInCommands() {
 /*
 	Returns 0 for continue, 1 for break
 */
-int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord) {
+int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord, std::vector<std::string> &dirHistory) {
 	if (firstWord.compare("history") == 0) {
 		printHistory(history);
 		return 0;
@@ -154,12 +231,27 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 	} else if (firstWord.compare("exit") == 0) {
 		return 1;
 	} else if (firstWord.compare("cd") == 0) {
-		changeDirectory(cmd);
+		changeDirectory(getDirFromCommand(cmd));
 		return 0;
 	} else if (firstWord.compare("pwd") == 0) {
 		getWorkingDir();
 		return 0;
-	} else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
+	} else if (firstWord.compare("dirs") == 0) {
+		printDirs(dirHistory);
+		return 0;
+	} else if (firstWord.compare("pushd") == 0) {
+		pushd(getDirFromCommand(cmd), dirHistory);
+		return 0;
+	} else if (firstWord.compare("popd") == 0) {
+		popd(dirHistory);
+		return 0;
+	} else if (firstWord.compare("running_time") == 0) {
+		printRunTime();
+		return 0;
+	} else if (firstWord.compare("waste") == 0) {
+		wasteTime();
+		return 0;
+	}  else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
 		cmd = cmd.substr(1, cmd.size());
 		trim(cmd);
 		int index = 0;
@@ -172,9 +264,9 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 		}
 		if (index < (int)history.size()) {
 			cmd = history[index-1];
-			if (in(cmd, builtInCommands())) {
-				firstWord = cmd;
-				runBuiltInCommand(cmd, history, ptime, firstWord);
+			auto cmdVec = split(cmd, ' ');
+			if (in(cmdVec[0], builtInCommands())) {
+				runBuiltInCommand(cmd, history, ptime, cmdVec[0], dirHistory);
 			} else {
 				execCommand(cmd, history, ptime);
 				return 0;
