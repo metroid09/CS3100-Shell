@@ -17,6 +17,7 @@
 #include<chrono>
 #include<time.h>
 #include<errno.h>
+#include <algorithm>
 #include <stdexcept>
 #include "StringFunctions.h"
 
@@ -49,6 +50,9 @@ int main(void) {
 		std::cout << "shell$ ";
 		std::string cmd = "";
 		getline(std::cin, cmd); //At this point, I need to 'tokenize' cmd
+		if (cmd.compare("\n") == 0 || cmd.compare("\r\n") == 0 || cmd.compare("") == 0) {
+			continue;
+		}
 		trim(cmd); //Trims command in place (allows for any amount of trailing and leading whitespace)
 		auto cmdVec = split(cmd, ' '); //Added for cd, ^ and other commands that start with a command and are built in.
 
@@ -109,10 +113,11 @@ void popd(std::vector<std::string> &dirHistory) {
 }
 
 void printRunTime() {
-	double timeRun = clock()/CLOCKS_PER_SEC;
+	std::clock_t timeRun = clock()/CLOCKS_PER_SEC;
+	std::cout << timeRun << std::endl;
 	int hours = (int)(timeRun / 3600);
 	int minutes = (int)(((timeRun/3600)-hours)*60);
-	int seconds = (int)(((((timeRun/3600)-hours)*60)-minutes)*60);
+	double seconds = (((((timeRun/3600.0)-hours)*60.0)-minutes)*60.0);
 	char minutesZero = (char)NULL;
 	char secondsZero = (char)NULL;
 	if (minutes < 10) {
@@ -121,7 +126,8 @@ void printRunTime() {
 	if (seconds < 10) {
 		secondsZero = '0';
 	}
-	std::cout << "Time this process has spent in the running state: " << hours << ":" << minutesZero << minutes << ":" << secondsZero << seconds << std::endl;
+	std::cout.precision(3);
+	std::cout << "Time this process has spent in the running state: " << hours << ":" << minutesZero << minutes << ":" << secondsZero << std::fixed << seconds << std::endl;
 }
 
 void wasteTime() {
@@ -170,12 +176,12 @@ void execCommand(std::string cmd, std::vector<std::string> &history, double &pti
 		// IF child, execute the user's input as a command
 		auto vec = split(cmd, ' '); //Split command based on spaces (return vector)
 		vec = cleanCmdVector(vec);
-		char **args = new char*[vec.size() + 1]; //
+		char **args = new char*[vec.size()]; //
 
 		for (int i = 0; i < (int)vec.size(); i++) { //Makes args for passing to execvp()
 			args[i] = (char*)vec[i].c_str();
 		}
-		args[vec.size() + 1] = (char*)NULL;
+		args[vec.size()] = (char*)NULL;
 
 		int result = execvp(args[0], args);
 
@@ -280,6 +286,8 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 }
 
 std::vector<std::string> cleanCmdVector(std::vector<std::string> cmdVec) {
+	cmdVec.erase(std::remove(cmdVec.begin(), cmdVec.end(), " "), cmdVec.end());
+
 	std::vector<std::string> returnVec;
 	for (auto s : cmdVec) {
 		if (s.compare(" ") == 0) {
