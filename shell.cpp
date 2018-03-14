@@ -21,6 +21,7 @@
 
 void printHistory(std::vector<std::string>);
 void printPtime(double ptime);
+void changeDirectory(std::string dir);
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime);
 int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord);
 std::vector<std::string> builtInCommands();
@@ -70,6 +71,13 @@ void printHistory(std::vector<std::string> history) {
 	for (int i = 0; i < (int)history.size(); i++) {
 		std::cout << i+1 << " : " << history[i] << std::endl;
 	}
+}
+
+void changeDirectory(std::string dir) {
+	auto cmdVec = split(dir, ' ');
+	cmdVec.erase(cmdVec.begin());
+	auto directory = cmdVec.front();
+	chdir(directory.c_str());
 }
 
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime) {
@@ -138,7 +146,8 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 	} else if (firstWord.compare("exit") == 0) {
 		return 1;
 	} else if (firstWord.compare("cd") == 0) {
-
+		changeDirectory(cmd);
+		return 0;
 	} else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
 		cmd = cmd.substr(1, cmd.size());
 		trim(cmd);
