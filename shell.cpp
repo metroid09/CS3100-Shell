@@ -22,6 +22,7 @@
 void printHistory(std::vector<std::string>);
 void printPtime(double ptime);
 void changeDirectory(std::string dir);
+void getWorkingDir();
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime);
 int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord);
 std::vector<std::string> builtInCommands();
@@ -80,6 +81,12 @@ void changeDirectory(std::string dir) {
 	chdir(directory.c_str());
 }
 
+void getWorkingDir() {
+	char cwd[256];
+	getcwd(cwd, sizeof(cwd));
+	std::cout << cwd << std::endl;
+}
+
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime) {
 	if (fork()) {
 		//parent
@@ -126,7 +133,8 @@ std::vector<std::string> builtInCommands() {
 		"ptime",
 		"exit",
 		"^",
-		"cd"
+		"cd",
+		"pwd"
 	};
 
 	return v;
@@ -147,6 +155,9 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 		return 1;
 	} else if (firstWord.compare("cd") == 0) {
 		changeDirectory(cmd);
+		return 0;
+	} else if (firstWord.compare("pwd") == 0) {
+		getWorkingDir();
 		return 0;
 	} else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
 		cmd = cmd.substr(1, cmd.size());
