@@ -12,13 +12,17 @@
 #include<stdlib.h>
 #include<sys/wait.h>
 #include<string>
+#include<string.h>
 #include<vector>
 #include<chrono>
+#include<errno.h>
+#include <stdexcept>
 #include "StringFunctions.h"
 
 void printHistory(std::vector<std::string>);
 void printPtime(double ptime);
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime);
+int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord);
 std::vector<std::string> builtInCommands();
 bool in(std::string check, std::vector<std::string> v);
 std::vector<std::string> cleanCmdVector(std::vector<std::string> cmdVec);
@@ -37,27 +41,19 @@ int main(void) {
 		std::string cmd;
 		getline(std::cin, cmd); //At this point, I need to 'tokenize' cmd
 		trim(cmd); //Trims command in place (allows for any amount of trailing and leading whitespace)
+		auto cmdVec = split(cmd, ' '); //Added for cd, ^ and other commands that start with a command and are built in.
 
 		history.push_back(cmd); // Push history before we run command
-		if (in(cmd, builtInCommands()) || cmd[0] == '^') { //If commands is in builtInCommands
-			if (cmd.compare("history") == 0) {
-				printHistory(history);
-			} else if (cmd.compare("ptime") == 0){
-				printPtime(ptime);
-			} else if (cmd.compare("exit") == 0) {
+		if (in(cmdVec[0], builtInCommands())) { //If commands is in builtInCommands
+			auto result = runBuiltInCommand(cmd, history, ptime, cmdVec[0]);
+			if (result == 0) {
+				continue;
+			} else if (result == 1) {
 				break;
-			} else if (cmd[0] == '^') { // We're trying to run a previous command!!
-				cmd = cmd.substr(1, cmd.size());
-				trim(cmd);
-				int index = std::stoi(cmd);
-				if (index < (int)history.size()) {
-					cmd = history[index];
-					execCommand(cmd, history, ptime);
-					continue;
-				}
-				std::cout << "History doesn't go back that far!" << std::endl;
+			} else {
+				std::cout << "Were you trying to break something? An error occured and I wasn't able to recover from it! Sorry about that." << std::endl;
+				break;
 			}
-			continue;
 		} else {
 			execCommand(cmd, history, ptime);
 		}
@@ -95,18 +91,11 @@ void execCommand(std::string cmd, std::vector<std::string> &history, double &pti
 		}
 		args[vec.size() + 1] = (char*)NULL;
 
-		std::cout << std::endl << std::endl;
-		std::cout << "Here's what we're trying to run right now" << std::endl;
-		for (auto i : vec) {
-			std::cout << i << std::endl;
-		}
-		std::cout << std::endl << std::endl;
-
 		int result = execvp(args[0], args);
 
 		if (-1 == result) { //vect must be null string terminated
 			// command not found, or similar error
-			std::cerr << args[0] << " failed!\n";
+			std::cerr << "Error: " << strerror(errno) << std::endl;
 			exit(1);
 		} else {
 			history.push_back(cmd);
@@ -128,9 +117,54 @@ std::vector<std::string> builtInCommands() {
 		"history",
 		"ptime",
 		"exit",
+		"^",
+		"cd"
 	};
 
 	return v;
+}
+
+
+/*
+	Returns 0 for continue, 1 for break
+*/
+int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord) {
+	if (firstWord.compare("history") == 0) {
+		printHistory(history);
+		return 0;
+	} else if (firstWord.compare("ptime") == 0){
+		printPtime(ptime);
+		return 0;
+	} else if (firstWord.compare("exit") == 0) {
+		return 1;
+	} else if (firstWord.compare("cd") == 0) {
+
+	} else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
+		cmd = cmd.substr(1, cmd.size());
+		trim(cmd);
+		int index = 0;
+		try {
+			index = std::stoi(cmd);
+		} catch (const std::invalid_argument& e) {
+			std::cout << "You input " << cmd << ", this will not work!" << std::endl;
+			std::cerr << "Invalid Argument: Requires an integer!" << std::endl;
+			return 0;
+		}
+		if (index < (int)history.size()) {
+			cmd = history[index-1];
+			if (in(cmd, builtInCommands())) {
+				firstWord = cmd;
+				runBuiltInCommand(cmd, history, ptime, firstWord);
+			} else {
+				execCommand(cmd, history, ptime);
+				return 0;
+			}
+		} else {
+			std::cout << "History doesn't go back that far!" << std::endl;
+			return 0;
+		}
+	}
+	return 0;
 }
 
 std::vector<std::string> cleanCmdVector(std::vector<std::string> cmdVec) {
