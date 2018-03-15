@@ -47,7 +47,7 @@ int main(void) {
 	// forever (until "exit is entered by the user
 	while (true) {
 		// print a prompt
-		std::cout << "shell$ ";
+		std::cout << "[cmd:] ";
 		std::string cmd = "";
 		getline(std::cin, cmd); //At this point, I need to 'tokenize' cmd
 		if (cmd.compare("\n") == 0 || cmd.compare("\r\n") == 0 || cmd.compare("") == 0) {
@@ -131,6 +131,7 @@ void printRunTime() {
 }
 
 void wasteTime() {
+	std::cout << "Wasting a little time in the running state so that running_time will show it's working" << std::endl;
 	bool done = false;
 	int n = 1;
 	for (int i = 0; i < 2; i++) {
