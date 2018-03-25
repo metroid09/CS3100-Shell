@@ -15,6 +15,9 @@ void split(const std::string &s, char delim, Out result) {
     std::stringstream ss(s);
     std::string item;
     while (std::getline(ss, item, delim)) {
+    	if (std::isspace(*item.c_str()) || *item.c_str() == (char)NULL) { //This wasn't required by the assignment, but gosh dang it was bugging me. Removes null characters from return vector
+    		continue;
+    	}
         *(result++) = item;
     }
 }

@@ -21,6 +21,8 @@
 #include <stdexcept>
 #include "StringFunctions.h"
 
+void printVec(std::vector<std::string> v);
+
 void printHistory(std::vector<std::string>);
 void printPtime(double ptime);
 void changeDirectory(std::string dir);
@@ -287,15 +289,25 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 }
 
 std::vector<std::string> cleanCmdVector(std::vector<std::string> cmdVec) {
-	cmdVec.erase(std::remove(cmdVec.begin(), cmdVec.end(), " "), cmdVec.end());
-
 	std::vector<std::string> returnVec;
 	for (auto s : cmdVec) {
-		if (s.compare(" ") == 0) {
-			continue;
+		if (strlen(s.c_str()) == 1) {
+			if (*s.c_str() == ' ' || *s.c_str() == (char)NULL) {
+				continue;
+			} else {
+				returnVec.push_back(trim_copy(s));
+				continue;
+			}
 		} else {
 			returnVec.push_back(trim_copy(s));
+			continue;
 		}
 	}
 	return returnVec;
+}
+
+void printVec(std::vector<std::string> v) {
+	for (auto s : v) {
+		std::cout << s << std::endl;
+	}
 }
