@@ -3,8 +3,18 @@
 * A01126615
 *
 * The following contains references used in the making of this program along with the initial framework provided by Prof. Falor
-* https://stackoverflow.com/a/236803 //String Split function, so much more elegant and clean than the ideas that I had in my head. Really this should be in the string class or something
-* https://stackoverflow.com/a/217605 //String Trim function, Trime should really be in the standard library for string, but this does come from a guy who primarily programs in python and php, fully understanding that c++ is all about doing things differently for different implementations
+* 
+* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+* https://stackoverflow.com/a/236803 //String Split function, so much more elegant and clean than 
+* the ideas that I had in my head. Really this should be in the string class or something
+* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+* https://stackoverflow.com/a/217605 //String Trim function, Trime should really be in the standard 
+* library for string, but this does come from a guy who primarily programs in python and php, fully 
+* understanding that c++ is all about doing things differently for different implementations
+* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+* http://www.cplusplus.com/forum/general/227799/ // Was having some issues with splitting strings 
+* on | characters for some reason that I have yet to figure out. Hopefully this will be out of the \
+* code before it's used.
  */
 
 #include<iostream>
@@ -17,24 +27,34 @@
 #include<chrono>
 #include<time.h>
 #include<errno.h>
+#include<signal.h>
 #include <algorithm>
 #include <stdexcept>
 #include "StringFunctions.h"
+#include <regex>
+
+const int WRITE = 1;
+const int READ = 0;
 
 void printVec(std::vector<std::string> v);
 
+void sig_callback(int);
 void printHistory(std::vector<std::string>);
 void printPtime(double ptime);
 void changeDirectory(std::string dir);
 void getWorkingDir();
+std::string returnWorkingDir();
 void pushd(std::string dir);
 void popd(std::vector<std::string> &dirHistory);
 void printRunTime();
 std::string getDirFromCommand(std::string dir);
+char** tokenizeCommand(std::string cmd);
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime);
+void pipeCommand(std::string cmd, std::vector<std::string> &history);
 int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, double &ptime, std::string firstWord, std::vector<std::string> &dirHistory);
 std::vector<std::string> builtInCommands();
-bool in(std::string check, std::vector<std::string> v);
+bool inStr(std::string check, std::string s);
+bool inStrVec(std::string check, std::vector<std::string> v);
 std::vector<std::string> cleanCmdVector(std::vector<std::string> cmdVec);
 void wasteTime(); //For checking if printRunTime is working
 
@@ -46,12 +66,19 @@ int main(void) {
 	char cwd[256];
 	getcwd(cwd, sizeof(cwd));
 
+	//Setting up callbacks for signals
+	signal(SIGINT, sig_callback);
+
 	// forever (until "exit is entered by the user
 	while (true) {
 		// print a prompt
-		std::cout << "[cmd:] ";
+		std::cout << "[" << returnWorkingDir() << ":] ";
 		std::string cmd = "";
 		getline(std::cin, cmd); //At this point, I need to 'tokenize' cmd
+		if (!std::cin) { //We got an EOF char, time to quit!
+			std::cout << std::endl;
+			return 0;
+		}
 		if (cmd.compare("\n") == 0 || cmd.compare("\r\n") == 0 || cmd.compare("") == 0) {
 			continue;
 		}
@@ -59,7 +86,7 @@ int main(void) {
 		auto cmdVec = split(cmd, ' '); //Added for cd, ^ and other commands that start with a command and are built in.
 
 		history.push_back(cmd); // Push history before we run command
-		if (in(cmdVec[0], builtInCommands())) { //If commands is in builtInCommands
+		if (inStrVec(cmdVec[0], builtInCommands())) { //If commands is in builtInCommands
 			auto result = runBuiltInCommand(cmd, history, ptime, cmdVec[0], dirHistory);
 			if (result == 0) {
 				continue;
@@ -69,12 +96,19 @@ int main(void) {
 				std::cout << "Were you trying to break something? An error occured and I wasn't able to recover from it! Sorry about that." << std::endl;
 				break; 
 			}
-		} else {
+		} else { //The command being run is not built in, probably in path.
 			execCommand(cmd, history, ptime);
 		}
 	}
 
 	return 0;
+}
+
+void sig_callback(int signum) {
+	if (signum == SIGINT) {
+		std::cout << std::endl;
+		return;
+	}
 }
 
 void printPtime(double ptime) {
@@ -95,6 +129,13 @@ void getWorkingDir() {
 	char cwd[256];
 	getcwd(cwd, sizeof(cwd));
 	std::cout << cwd << std::endl;
+}
+
+std::string returnWorkingDir() {
+	char cwd[256];
+	getcwd(cwd, sizeof(cwd));
+	std::string str(cwd);
+	return str;
 }
 
 void pushd(std::string dir, std::vector<std::string> &dirHistory) {
@@ -166,40 +207,124 @@ std::string getDirFromCommand(std::string dir) {
 	return cmdVec.front();
 }
 
+char** tokenizeCommand(std::string cmd) {
+	auto vec = split(cmd, ' '); //Split command based on spaces (return vector)
+	vec = cleanCmdVector(vec);
+	char **args = new char*[vec.size()]; //
+
+	for (int i = 0; i < (int)vec.size(); i++) { //Makes args for passing to execvp()
+		args[i] = (char*)vec[i].c_str();
+	}
+	args[vec.size()] = (char*)NULL;
+
+	return args;
+}
+
 void execCommand(std::string cmd, std::vector<std::string> &history, double &ptime) {
-	if (fork()) {
-		int wstatus = 2;
-		//parent
-		auto start = std::chrono::high_resolution_clock::now();
-		wait(&wstatus);
-		auto end = std::chrono::high_resolution_clock::now();
-		std::chrono::duration<double> diff = end-start;
-		ptime += diff.count();
+	if (inStr("|", cmd)) { // If a pipe character is in the command
+		pipeCommand(cmd, history);
 	} else {
-		// IF child, execute the user's input as a command
-		auto vec = split(cmd, ' '); //Split command based on spaces (return vector)
-		vec = cleanCmdVector(vec);
-		char **args = new char*[vec.size()]; //
-
-		for (int i = 0; i < (int)vec.size(); i++) { //Makes args for passing to execvp()
-			args[i] = (char*)vec[i].c_str();
-		}
-		args[vec.size()] = (char*)NULL;
-
-		int result = execvp(args[0], args);
-
-		if (-1 == result) { //vect must be null string terminated
-			// command not found, or similar error
-			std::cout << "Command: " <<  args[0] << std::endl;
-			std::cerr << "Error: " << strerror(errno) << std::endl;
-			exit(1);
+		if (fork()) {
+			int wstatus = 2;
+			//parent
+			auto start = std::chrono::high_resolution_clock::now();
+			wait(&wstatus);
+			auto end = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> diff = end-start;
+			ptime += diff.count();
 		} else {
-			history.push_back(cmd);
+			// IF child, execute the user's input as a command
+			// Prep to exec command
+			int result = 0;
+			
+			// We're not piping anything - Execute command normally
+			// Tokenize command before passing it through to execvp
+			char** args = tokenizeCommand(cmd);
+			result = execvp(args[0], args);
+
+			if (-1 == result) { //vect must be null string terminated
+				// command not found, or similar error
+				std::cerr << "Error: " << strerror(errno) << std::endl;
+				exit(1);
+			} else {
+				history.push_back(cmd);
+			}
 		}
 	}
 }
 
-bool in(std::string check, std::vector<std::string> v) {
+void pipeCommand(std::string cmd, std::vector<std::string> &history) {
+	// This is a piped command, we need to deal with that before starting to run the command
+	//Create our pipe
+	int p[2];
+	pipe(p);
+	// We're piping something, need to split commands up to run separately
+	const std::regex pipe( "\\|" );
+	using iterator = std::sregex_token_iterator;
+	const std::vector<std::string> pipeCmds { iterator( cmd.begin(), cmd.end(), pipe, -1 ), iterator() };
+
+	//auto pipeCmds = split(cmd, '|'); // Split commands by pipes into strings
+
+	std::vector<char**> tokenVector; // Vector of tokenized string arrays 
+	for (std::string s : pipeCmds) {
+		tokenVector.push_back(tokenizeCommand(s));
+	}
+	if (tokenVector.size() > 2) return;
+
+	if (fork() == 0) {
+	    // 1st child
+	    // 0) read in the source for this file and print it to the
+	    //    pipe
+
+	    // close(p[READ]);
+	    dup2(p[WRITE], 1);
+
+	    int returnValue = execvp(tokenVector[0][0], tokenVector[0]);
+
+	    if (returnValue != 0)
+	        std::cerr << "Error: " << strerror(errno) << std::endl;
+	    exit(returnValue);
+	}
+
+
+	if (fork() == 0) {
+	    // 2nd child
+	    // 1) read the pipe and send the text
+	    // through the tr program
+
+	    // close(p[WRITE]);
+	    dup2(p[READ], STDIN_FILENO);
+
+	    int returnValue = execvp(tokenVector[1][0], tokenVector[1]);
+
+	    if (returnValue != 0)
+	        std::cerr << "Error: " << strerror(errno) << std::endl;
+	    exit(returnValue);
+	}
+
+	int wstatus;
+	int kids = 2;
+	while (kids > 0) {
+	    pid_t kiddo = waitpid(-1, &wstatus, 0);
+	    std::cout << "Child proc " << kiddo << " exited with status "
+	        << wstatus << std::endl;
+	    kids--;
+	}
+
+	history.push_back(cmd);
+}
+
+bool inStr(std::string check, std::string s) {
+	auto v = split(s, ' ');
+	for (auto str : v) {
+		if (check.compare(str) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool inStrVec(std::string check, std::vector<std::string> v) {
 	for (auto s : v) {
 		if (check.compare(s) == 0) {
 			return true;
@@ -213,6 +338,7 @@ std::vector<std::string> builtInCommands() {
 		"history",
 		"ptime",
 		"exit",
+		"quit",
 		"^",
 		"cd",
 		"pwd",
@@ -237,7 +363,7 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 	} else if (firstWord.compare("ptime") == 0){
 		printPtime(ptime);
 		return 0;
-	} else if (firstWord.compare("exit") == 0) {
+	} else if (firstWord.compare("exit") == 0 || firstWord.compare("quit") == 0) {
 		return 1;
 	} else if (firstWord.compare("cd") == 0) {
 		changeDirectory(getDirFromCommand(cmd));
@@ -260,7 +386,7 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 	} else if (firstWord.compare("waste") == 0) {
 		wasteTime();
 		return 0;
-	}  else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
+	} else if (firstWord.compare("^") == 0) { // We're trying to run a previous command!!
 		cmd = cmd.substr(1, cmd.size());
 		trim(cmd);
 		int index = 0;
@@ -274,7 +400,7 @@ int runBuiltInCommand(std::string &cmd, std::vector<std::string> &history, doubl
 		if (index < (int)history.size()) {
 			cmd = history[index-1];
 			auto cmdVec = split(cmd, ' ');
-			if (in(cmdVec[0], builtInCommands())) {
+			if (inStrVec(cmdVec[0], builtInCommands())) {
 				runBuiltInCommand(cmd, history, ptime, cmdVec[0], dirHistory);
 			} else {
 				execCommand(cmd, history, ptime);
